@@ -61,6 +61,26 @@ https://hass-auth-demo.glitch.me/auth_callback?
 
 This authorization code can be exchanged for tokens by sending it to the token endpoint (see next section).
 
+### PKCE
+
+Home Assistant supports Proof Key for Code Exchange ([PKCE, RFC 7636](https://datatracker.ietf.org/doc/html/rfc7636)) with the `S256` method. PKCE is optional. It protects the authorization code if another app intercepts the redirect.
+
+To use PKCE, generate a random `code_verifier` of 43 to 128 characters from `A-Z`, `a-z`, `0-9`, `-`, `.`, `_` and `~`. Calculate the `code_challenge` as the unpadded base64url encoding of the SHA-256 hash of the verifier. Add the challenge and `code_challenge_method=S256` to the authorize URL:
+
+```txt
+http://your-instance.com/auth/authorize?
+    client_id=https%3A%2F%2Fhass-auth-demo.glitch.me&
+    redirect_uri=https%3A%2F%2Fhass-auth-demo.glitch.me%2Fauth_callback&
+    code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&
+    code_challenge_method=S256
+```
+
+`S256` is the only supported method. Send the `code_verifier` when you exchange the authorization code at the token endpoint.
+
+### Server metadata
+
+Clients can discover the endpoints and supported features at `http://your-instance.com/.well-known/oauth-authorization-server` ([RFC 8414](https://datatracker.ietf.org/doc/html/rfc8414)). The `code_challenge_methods_supported` field lists the supported PKCE methods.
+
 ## Token
 
 The token endpoint returns tokens given valid grants. This grant is either an authorization code retrieved from the authorize endpoint or a refresh token. In the case of refresh token, the token endpoint is also capable of revoking a token.
@@ -79,6 +99,15 @@ Use the grant type `authorization_code` to retrieve the tokens after a user has 
 grant_type=authorization_code&
 code=12345&
 client_id=https%3A%2F%2Fhass-auth-demo.glitch.me
+```
+
+If the authorize URL contained a `code_challenge`, also send the `code_verifier`:
+
+```txt
+grant_type=authorization_code&
+code=12345&
+client_id=https%3A%2F%2Fhass-auth-demo.glitch.me&
+code_verifier=dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk
 ```
 
 The return response will be an access and refresh token:
@@ -102,6 +131,14 @@ An HTTP status code of 400 will be returned if an invalid request has been issue
     "error_description": "Invalid client id",
 }
 ```
+
+With PKCE, the token endpoint returns these errors with HTTP status code 400:
+
+| Error | Cause |
+| ----- | ----- |
+| `invalid_request` | The authorize URL contained a `code_challenge`, but the request has no `code_verifier`. |
+| `invalid_grant` | The `code_verifier` does not match the `code_challenge`. |
+| `invalid_request` | The request has a `code_verifier`, but the authorize URL contained no `code_challenge`. |
 
 ### Refresh token
 
